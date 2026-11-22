@@ -342,20 +342,79 @@ def page_plan():
     st.download_button("Download plan (CSV)", csv_bytes(out), "restock_plan.csv", "text/csv")
 
 
-SYSTEM = (
-    "You are the stock assistant for Abbikev Beauty Parlour in Ukunda, Kenya. Use only the data provided. "
-    "Say plainly when something is missing (blank means not counted). Never invent sales, demand or dates: the records have no dates. "
-    "Amounts are in KES. Keep answers short and practical. Reply in Swahili if the owner writes Swahili. "
-    "You only suggest; the owner decides every purchase."
-)
+SYSTEM = """You are the stock assistant for Abbikev Beauty Parlour, a beauty shop and salon in Ukunda, Kwale County, Kenya. \
+You help the owner and staff with anything about stock, buying, pricing, selling, cash use, record keeping and running the shop: \
+for example what to reorder, how much to keep, how to price, how to handle slow or fast items, how to store products, and how to keep better records.
+
+Rules:
+- For questions about this shop's own numbers, use the shop data below or the tools. Never invent sales, stock levels, prices, dates or demand. \
+The records have no dates, and a blank on-hand value means the item has not been counted; say so.
+- For general questions (retail practice, stock rules of thumb, pricing, product care), answer from general knowledge and say it is general advice, not taken from the shop's records.
+- If a question is not about stock, the shop or running a beauty business, say politely that you can only help with the shop and its stock.
+- Amounts are in Kenya shillings (KES). Use the tools for totals and restock plans instead of working them out yourself.
+- Keep answers short, practical and in plain words, and offer a next step. You only suggest; the owner decides every purchase."""
+
+LANG_RULE = {
+    "en": "Reply in English.",
+    "sw": "Jibu kwa Kiswahili rahisi cha kila siku kinachomfaa mmiliki wa duka. Reply only in Kiswahili. Keep product names, numbers and KES amounts as written.",
+}
+
+T = {
+    "en": {
+        "title": "Stock assistant",
+        "banner": "The assistant only reads this app’s data, can be wrong, and never changes your counts. You decide every purchase. "
+                  "Stop relying on it if it contradicts your counts twice in a week.",
+        "basic_note": " Right now it can only answer basic questions about spending, low stock and restock plans. "
+                      "The AI service that answers any question about the shop is not connected yet.",
+        "ph": "Ask anything about your stock or the shop",
+        "think": "Thinking…",
+        "chips": ["Which items cost the most to restock?", "What is below reorder level?",
+                  "Plan my restock for KES 15,000", "How do I know when to reorder?"],
+        "err": "The AI assistant could not answer just now. Here is a basic answer instead:",
+        "help": "I can answer basic questions: what costs the most to restock, what is below its reorder level, and a restock plan for a budget. "
+                "Try: “Which items cost the most to restock?” or “Plan my restock for 15000”. "
+                "The AI service that answers any question about the shop is not connected yet.",
+        "top": "Biggest restock spend (Record A):",
+        "nocount": "No counts entered yet. Enter them on the Stock counts tab.",
+        "nolow": "Nothing is below its reorder level.",
+        "low": "Below reorder level:",
+        "left": "left", "at": "reorder at",
+        "needcounts": "I need on-hand counts and reorder levels first. Enter them on the Stock counts tab.",
+        "plan": "With {b} (50% buffer, usual demand), {f} is funded of {n} needed:",
+        "fund": "fund now", "defer": "over budget, defer",
+    },
+    "sw": {
+        "title": "Msaidizi wa stoo",
+        "banner": "Msaidizi husoma data ya programu hii tu, anaweza kukosea, na habadilishi hesabu zako. Wewe ndiye unayeamua kila ununuzi. "
+                  "Acha kumtegemea akipingana na hesabu zako mara mbili kwa wiki.",
+        "basic_note": " Kwa sasa anaweza kujibu maswali ya msingi tu kuhusu matumizi, bidhaa zinazoisha na mpango wa kuagiza. "
+                      "Huduma ya AI inayojibu swali lolote kuhusu duka bado haijaunganishwa.",
+        "ph": "Uliza chochote kuhusu stoo au duka lako",
+        "think": "Inafikiri…",
+        "chips": ["Bidhaa zipi zinagharimu zaidi kuagiza?", "Nini kimefika chini ya kiwango cha kuagiza?",
+                  "Panga uagizaji wangu kwa KES 15,000", "Nitajuaje wakati wa kuagiza?"],
+        "err": "Msaidizi wa AI hajaweza kujibu sasa hivi. Hapa kuna jibu la msingi:",
+        "help": "Naweza kujibu maswali ya msingi: bidhaa zinazogharimu zaidi kuagiza, zilizo chini ya kiwango cha kuagiza, na mpango wa kuagiza kwa bajeti. "
+                "Jaribu: “Bidhaa zipi zinagharimu zaidi?” au “Panga uagizaji wangu kwa 15000”. "
+                "Huduma ya AI inayojibu swali lolote kuhusu duka bado haijaunganishwa.",
+        "top": "Matumizi makubwa zaidi ya kuagiza (Rekodi A):",
+        "nocount": "Bado hujaingiza hesabu za stoo. Ziingize kwenye ukurasa wa Hesabu za stoo.",
+        "nolow": "Hakuna kilicho chini ya kiwango cha kuagiza.",
+        "low": "Chini ya kiwango cha kuagiza:",
+        "left": "zimebaki", "at": "agiza ikifika",
+        "needcounts": "Kwanza nahitaji hesabu za stoo na viwango vya kuagiza. Viingize kwenye ukurasa wa Hesabu za stoo.",
+        "plan": "Kwa {b} (akiba 50%, mahitaji ya kawaida), {f} imepangwa kati ya {n} zinazohitajika:",
+        "fund": "tenga sasa", "defer": "zaidi ya bajeti, ahirisha",
+    },
+}
 
 
 def context_text():
     s = stock[["item", "unit", "unit_cost", "last_bought", "on_hand", "reorder_level"]].round(0)
-    top_sales = sales.groupby("group").line_total_recorded_kes.sum().sort_values(ascending=False).head(8)
+    top_sales = sales.groupby("group").line_total_recorded_kes.sum().sort_values(ascending=False)
     return (
-        "STOCK (blank = not counted):\n" + s.to_csv(index=False)
-        + "\nSALES BY ITEM (Record B, undated, KES):\n" + top_sales.to_string()
+        "SHOP DATA\nSTOCK (unit cost and last quantity bought from the purchase record; blank on_hand = not counted):\n" + s.to_csv(index=False)
+        + "\nSALES BY ITEM (sales record, undated, KES):\n" + top_sales.to_string()
         + f"\nLast restock total: {total_spend} KES. Recorded sales total: {sales.line_total_recorded_kes.sum()} KES."
     )
 
@@ -367,65 +426,121 @@ def get_secret(name, default=None):
         return os.environ.get(name, default)
 
 
-def offline_answer(q):
+TOOLS = [
+    {"name": "top_spend", "description": "Items with the biggest restock spend in the purchase record.",
+     "input_schema": {"type": "object", "properties": {"n": {"type": "integer"}}}},
+    {"name": "low_stock", "description": "Items counted at or below their reorder level.",
+     "input_schema": {"type": "object", "properties": {}}},
+    {"name": "restock_plan", "description": "Restock plan for a budget in KES using the shelf counts and reorder levels.",
+     "input_schema": {"type": "object", "properties": {"budget": {"type": "number"}, "buffer_pct": {"type": "number"},
+                                                       "demand": {"type": "number", "description": "0.8, 1.0 or 1.2"}},
+                      "required": ["budget"]}},
+    {"name": "find_item", "description": "Look up stock rows whose name contains the given text.",
+     "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
+    {"name": "sales_summary", "description": "Recorded sales totals by item or service.",
+     "input_schema": {"type": "object", "properties": {}}},
+]
+
+
+def run_tool(name, args):
+    import json
+
+    try:
+        if name == "top_spend":
+            t = stock.sort_values("last_spend", ascending=False).head(int(args.get("n", 5)))
+            out = t[["item", "unit", "last_bought", "last_spend"]].to_dict("records")
+        elif name == "low_stock":
+            c = stock.dropna(subset=["on_hand", "reorder_level"])
+            out = c[c.on_hand <= c.reorder_level][["item", "unit", "on_hand", "reorder_level"]].to_dict("records")
+        elif name == "restock_plan":
+            plan, funded, need = make_plan(stock, float(args["budget"]), float(args.get("buffer_pct", 50)), float(args.get("demand", 1.0)))
+            out = {"funded_kes": round(funded), "needed_kes": round(need),
+                   "items": plan[["item", "buy_qty", "unit", "cost", "status"]].round(0).to_dict("records"),
+                   "note": "empty plan means no counts or reorder levels entered" if plan.empty else ""}
+        elif name == "find_item":
+            m = stock[stock["item"].str.contains(str(args["name"]), case=False, regex=False)]
+            out = m[["item", "unit", "unit_cost", "last_bought", "on_hand", "reorder_level"]].round(0).to_dict("records")
+        elif name == "sales_summary":
+            out = sales.groupby("group").line_total_recorded_kes.sum().sort_values(ascending=False).to_dict()
+        else:
+            out = {"error": "unknown tool"}
+        return json.dumps(out, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def offline_answer(q, lang="en"):
+    t = T[lang]
     ql = q.lower()
     counted = stock.dropna(subset=["on_hand"])
-    if re.search(r"plan|budget|reorder first|buy", ql):
+    if re.search(r"plan|panga|budget|reorder first|buy|mpango|bajeti|agiza", ql):
         m = re.search(r"(\d[\d,]*)", ql)
         b = float(m.group(1).replace(",", "")) if m else 15000
         plan, funded, need = make_plan(stock, b, 50, 1.0)
         if plan.empty:
-            return "I need on-hand counts and reorder levels first. Enter them on the Stock tab."
-        lines = [f"- {r.item}: {int(r.buy_qty)} {r.unit} ({kes(r.cost)}), {r.status.lower()}" for r in plan.itertuples()]
-        return f"With {kes(b)} (50% buffer, usual demand), {kes(funded)} is funded of {kes(need)} needed:\n" + "\n".join(lines[:10])
-    if re.search(r"low|below|short|out of", ql):
+            return t["needcounts"]
+        lines = [f"- {r.item}: {int(r.buy_qty)} {r.unit} ({kes(r.cost)}), {t['fund'] if r.status == 'Fund now' else t['defer']}" for r in plan.itertuples()]
+        return t["plan"].format(b=kes(b), f=kes(funded), n=kes(need)) + "\n" + "\n".join(lines[:10])
+    if re.search(r"low|below|short|out of|chini|kimeisha|imeisha|kimefika", ql):
         low = counted[(counted.reorder_level.notna()) & (counted.on_hand <= counted.reorder_level)]
         if counted.empty:
-            return "No counts entered yet. Enter them on the Stock counts tab."
+            return t["nocount"]
         if low.empty:
-            return "Nothing is below its reorder level."
-        return "Below reorder level:\n" + "\n".join(f"- {r.item}: {r.on_hand:g} {r.unit} left (reorder at {r.reorder_level:g})" for r in low.itertuples())
-    if re.search(r"cost|expensive|spend|most", ql):
-        t = stock.sort_values("last_spend", ascending=False).head(5)
-        return "Biggest restock spend (Record A):\n" + "\n".join(f"- {r.item}: {kes(r.last_spend)}" for r in t.itertuples())
-    return "Try: “Which items cost the most to restock?”, “What is below reorder level?” or “Plan my restock for 15000”. (Offline mode: add an Anthropic API key for full answers.)"
+            return t["nolow"]
+        return t["low"] + "\n" + "\n".join(f"- {r.item}: {r.on_hand:g} {r.unit} {t['left']} ({t['at']} {r.reorder_level:g})" for r in low.itertuples())
+    if re.search(r"cost|expensive|spend|most|gharama|ghali|zaidi|gharimu", ql):
+        top = stock.sort_values("last_spend", ascending=False).head(5)
+        return t["top"] + "\n" + "\n".join(f"- {r.item}: {kes(r.last_spend)}" for r in top.itertuples())
+    return t["help"]
 
 
-def ask_claude(q, history):
+def ask_claude(q, history, lang):
     key = get_secret("ANTHROPIC_API_KEY")
     if not key:
-        return offline_answer(q)
+        return offline_answer(q, lang)
     try:
         import anthropic
 
         client = anthropic.Anthropic(api_key=key)
-        msgs = [{"role": h["role"], "content": h["content"]} for h in history[-8:]]
-        msgs.append({"role": "user", "content": f"{context_text()}\n\nOwner question: {q}"})
-        r = client.messages.create(model=get_secret("ANTHROPIC_MODEL", "claude-sonnet-5-5"), max_tokens=700, system=SYSTEM, messages=msgs)
-        return r.content[0].text
-    except Exception as e:  # keep the app usable if the API is unavailable
-        return f"The AI assistant could not answer ({type(e).__name__}). Offline answer:\n\n{offline_answer(q)}"
+        msgs = [{"role": h["role"], "content": h["content"]} for h in history[-10:]]
+        msgs.append({"role": "user", "content": q})
+        system = SYSTEM + "\n\n" + LANG_RULE[lang] + "\n\n" + context_text()
+        model = get_secret("ANTHROPIC_MODEL", "claude-sonnet-5-5")
+        for _ in range(5):
+            r = client.messages.create(model=model, max_tokens=900, system=system, tools=TOOLS, messages=msgs)
+            if r.stop_reason != "tool_use":
+                return "".join(b.text for b in r.content if b.type == "text")
+            msgs.append({"role": "assistant", "content": r.content})
+            msgs.append({"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": b.id, "content": run_tool(b.name, b.input)}
+                for b in r.content if b.type == "tool_use"]})
+        return T[lang]["err"] + "\n\n" + offline_answer(q, lang)
+    except Exception:  # keep the app usable if the AI service is unavailable
+        return T[lang]["err"] + "\n\n" + offline_answer(q, lang)
 
 
 def page_assistant():
-    st.subheader("Stock assistant")
-    mode = "AI mode" if get_secret("ANTHROPIC_API_KEY") else "Offline mode (no API key set)"
-    st.markdown(
-        f'<div class="callout"><b>{mode}.</b> The assistant only reads this app’s data, can be wrong, and never changes your counts. '
-        "You decide every purchase. Stop relying on it if it contradicts your counts twice in a week.</div>",
-        unsafe_allow_html=True,
-    )
+    choice = st.radio("Language / Lugha", ["English", "Kiswahili"], horizontal=True, key="lang_choice")
+    lang = "sw" if choice == "Kiswahili" else "en"
+    t = T[lang]
+    st.subheader(t["title"])
+    basic = "" if get_secret("ANTHROPIC_API_KEY") else t["basic_note"]
+    st.markdown(f'<div class="callout">{t["banner"]}{basic}</div>', unsafe_allow_html=True)
     if "chat" not in st.session_state:
         st.session_state.chat = []
     for m in st.session_state.chat:
         with st.chat_message(m["role"]):
             st.write(m["content"])
-    q = st.chat_input("Ask about stock, costs or what to reorder")
+    cols = st.columns(len(t["chips"]))
+    for i, (c, label) in enumerate(zip(cols, t["chips"])):
+        if c.button(label, key=f"chip_{lang}_{i}"):
+            st.session_state.pending = label
+    q = st.chat_input(t["ph"]) or st.session_state.pop("pending", None)
     if q:
         with st.chat_message("user"):
             st.write(q)
-        with st.spinner("Thinking…"):
-            a = ask_claude(q, st.session_state.chat)
+        with st.spinner(t["think"]):
+            a = ask_claude(q, st.session_state.chat, lang)
         st.session_state.chat += [{"role": "user", "content": q}, {"role": "assistant", "content": a}]
         with st.chat_message("assistant"):
             st.write(a)
